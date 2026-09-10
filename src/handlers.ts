@@ -26,27 +26,27 @@ interface NftItem {
 }
 
 const NFT_CATALOG: NftItem[] = [
-  // 15⭐ — Мишка, Сердце
-  { slug: 'bear-15', name: 'Мишка', emoji: '🧸', priceStars: 15, giftIds: ['9000000000000001'], category: 'nft' },
-  { slug: 'heart-15', name: 'Сердце', emoji: '❤️', priceStars: 15, giftIds: ['9000000000000006'], category: 'nft' },
-  // 25⭐ — Scared Cat, Подарок, Роза
+  // 15⭐ — обычные
+  { slug: 'bear-15', name: 'Мишка', emoji: '🧸', priceStars: 15, giftIds: ['9000000000000001'], category: 'basic' },
+  { slug: 'heart-15', name: 'Сердце', emoji: '❤️', priceStars: 15, giftIds: ['9000000000000006'], category: 'basic' },
+  // 25⭐ — Scared Cat (NFT!), Подарок, Роза
   { slug: 'scared-cat', name: 'Scared Cat', emoji: '🐱', priceStars: 25, giftIds: ['9000000000000007'], category: 'nft' },
   { slug: 'gift-25', name: 'Подарок', emoji: '🎁', priceStars: 25, giftIds: ['9000000000000028', '9000000000000030'], category: 'basic' },
-  { slug: 'rose-25', name: 'Роза', emoji: '🌹', priceStars: 25, giftIds: ['9000000000000030'], category: 'nft' },
+  { slug: 'rose-25', name: 'Роза', emoji: '🌹', priceStars: 25, giftIds: ['9000000000000030'], category: 'basic' },
   // 50⭐ — Букет, Ракета, Бутылка, Торт
-  { slug: 'bouquet-50', name: 'Букет', emoji: '💐', priceStars: 50, giftIds: ['9000000000000005', '9000000000000008'], category: 'nft' },
-  { slug: 'rocket-50', name: 'Ракета', emoji: '🚀', priceStars: 50, giftIds: ['9000000000000009', '9000000000000013'], category: 'nft' },
-  { slug: 'bottle-50', name: 'Бутылка', emoji: '🍾', priceStars: 50, giftIds: ['9000000000000033'], category: 'nft' },
-  { slug: 'cake-50', name: 'Birthday Cake', emoji: '🎂', priceStars: 50, giftIds: ['9000000000000005', '9000000000000008'], category: 'nft' },
+  { slug: 'bouquet-50', name: 'Букет', emoji: '💐', priceStars: 50, giftIds: ['9000000000000005', '9000000000000008'], category: 'basic' },
+  { slug: 'rocket-50', name: 'Ракета', emoji: '🚀', priceStars: 50, giftIds: ['9000000000000009', '9000000000000013'], category: 'basic' },
+  { slug: 'bottle-50', name: 'Бутылка', emoji: '🍾', priceStars: 50, giftIds: ['9000000000000033'], category: 'basic' },
+  { slug: 'cake-50', name: 'Birthday Cake', emoji: '🎂', priceStars: 50, giftIds: ['9000000000000005', '9000000000000008'], category: 'basic' },
   // 100⭐ — Кубок, Кольцо, Алмаз
-  { slug: 'cup-100', name: 'Кубок', emoji: '🏆', priceStars: 100, giftIds: ['9000000000000010', '9000000000000011'], category: 'nft' },
-  { slug: 'ring-100', name: 'Кольцо', emoji: '💍', priceStars: 100, giftIds: ['9000000000000012', '9000000000000036'], category: 'nft' },
-  { slug: 'diamond-100', name: 'Алмаз', emoji: '💎', priceStars: 100, giftIds: ['9000000000000039', '9000000000000047'], category: 'nft' },
+  { slug: 'cup-100', name: 'Кубок', emoji: '🏆', priceStars: 100, giftIds: ['9000000000000010', '9000000000000011'], category: 'basic' },
+  { slug: 'ring-100', name: 'Кольцо', emoji: '💍', priceStars: 100, giftIds: ['9000000000000012', '9000000000000036'], category: 'basic' },
+  { slug: 'diamond-100', name: 'Алмаз', emoji: '💎', priceStars: 100, giftIds: ['9000000000000039', '9000000000000047'], category: 'basic' },
 ]
 
 const CATEGORIES = [
-  { id: 'nft', name: '🖼️ NFT', desc: 'Уникальные подарки 15-100⭐' },
-  { id: 'basic', name: '🎁 Обычные', desc: 'Стандартные подарки' },
+  { id: 'basic', name: '🎁 Обычные', desc: 'Стандартные подарки 15-100⭐' },
+  { id: 'nft', name: '🖼️ NFT', desc: 'Scared Cat — 25⭐' },
 ]
 
 function getNftBySlug(slug: string): NftItem | null {
