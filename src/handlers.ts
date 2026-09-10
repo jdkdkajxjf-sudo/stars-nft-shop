@@ -26,24 +26,29 @@ interface NftItem {
 }
 
 const NFT_CATALOG: NftItem[] = [
-  // 🐱 Коты (15⭐)
-  { slug: 'cat-grey', name: 'Серый кот', emoji: '🐱', priceStars: 15, giftIds: ['9000000000000001', '9000000000000006'], category: 'cats' },
-  // 🎁 Подарки (25-75⭐)
-  { slug: 'gift-silver', name: 'Серебряный подарок', emoji: '🎁', priceStars: 25, giftIds: ['9000000000000007', '9000000000000028', '9000000000000030'], category: 'gifts' },
-  { slug: 'gift-gold', name: 'Золотой подарок', emoji: '✨', priceStars: 50, giftIds: ['9000000000000005', '9000000000000008', '9000000000000009', '9000000000000013'], category: 'gifts' },
-  { slug: 'gift-bronze', name: 'Бронзовый подарок', emoji: '🥉', priceStars: 75, giftIds: ['9000000000000031', '9000000000000043'], category: 'gifts' },
-  // 💎 Премиум (100⭐)
-  { slug: 'diamond-blue', name: 'Синий бриллиант', emoji: '💎', priceStars: 100, giftIds: ['9000000000000010', '9000000000000011', '9000000000000012'], category: 'premium' },
-  { slug: 'diamond-violet', name: 'Фиолетовый бриллиант', emoji: '🔮', priceStars: 100, giftIds: ['9000000000000036', '9000000000000039'], category: 'premium' },
-  // 👑 Легендарные (500⭐)
-  { slug: 'crown-gold', name: 'Золотая корона', emoji: '👑', priceStars: 500, giftIds: ['9000000000000029', '9000000000000035', '9000000000000040'], category: 'legendary' },
+  // 15⭐ — обычные TG подарки
+  { slug: 'tg-gift-15', name: 'Обычный подарок', emoji: '🎁', priceStars: 15, giftIds: ['9000000000000001', '9000000000000006'], category: 'basic' },
+  // 25⭐ — Scared Cat (испуганный кот)
+  { slug: 'scared-cat', name: 'Scared Cat (Испуганный кот)', emoji: '🐱', priceStars: 25, giftIds: ['9000000000000007', '9000000000000028', '9000000000000030'], category: 'cats' },
+  // 50⭐ — Торт TG обычный
+  { slug: 'cake-50', name: 'Торт (Birthday Cake)', emoji: '🎂', priceStars: 50, giftIds: ['9000000000000005', '9000000000000008', '9000000000000009', '9000000000000013', '9000000000000033'], category: 'food' },
+  // 75⭐
+  { slug: 'gift-75', name: 'Подарок 75⭐', emoji: '🎁', priceStars: 75, giftIds: ['9000000000000031', '9000000000000043'], category: 'basic' },
+  // 100⭐ — обычный TG подарок
+  { slug: 'tg-gift-100', name: 'Обычный подарок 100⭐', emoji: '🎁', priceStars: 100, giftIds: ['9000000000000010', '9000000000000011', '9000000000000012', '9000000000000036', '9000000000000039', '9000000000000047'], category: 'basic' },
+  // 500⭐ — легендарные
+  { slug: 'crown-500', name: 'Корона (Crown)', emoji: '👑', priceStars: 500, giftIds: ['9000000000000029', '9000000000000035', '9000000000000040'], category: 'legendary' },
+  // 666⭐ — Demon Seal
+  { slug: 'demon-seal', name: 'Demon Seal 👹', emoji: '👹', priceStars: 666, giftIds: ['9000000000000042'], category: 'legendary' },
+  // 1000⭐ — топ
+  { slug: 'top-gift', name: 'Эталонный подарок', emoji: '⭐', priceStars: 1000, giftIds: ['9000000000000037'], category: 'legendary' },
 ]
 
 const CATEGORIES = [
-  { id: 'cats', name: '🐱 Коты', desc: 'Милые котики от 15⭐' },
-  { id: 'gifts', name: '🎁 Подарки', desc: 'Серебро/золото/бронза от 25⭐' },
-  { id: 'premium', name: '💎 Премиум', desc: 'Бриллианты от 100⭐' },
-  { id: 'legendary', name: '👑 Легендарные', desc: 'Короны от 500⭐' },
+  { id: 'basic', name: '🎁 Обычные', desc: 'Стандартные TG подарки 15-100⭐' },
+  { id: 'cats', name: '🐱 Коты', desc: 'Scared Cat — 25⭐' },
+  { id: 'food', name: '🎂 Еда', desc: 'Торт — 50⭐' },
+  { id: 'legendary', name: '👑 Легендарные', desc: 'Корона/Demon Seal/Эталон — 500-1000⭐' },
 ]
 
 function getNftBySlug(slug: string): NftItem | null {
