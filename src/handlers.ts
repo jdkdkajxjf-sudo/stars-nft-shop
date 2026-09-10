@@ -72,61 +72,76 @@ async function upsertUser(from: TgUser) {
 export async function handleUpdate(update: TgUpdate): Promise<void> {
   try {
     // Pre-checkout — AltGram присылает ПЕРЕД оплатой
-    // ВАЖНО: AltGram НЕ присылает successful_payment после оплаты!
-    // Поэтому доставляем NFT СРАЗУ при pre_checkout (после ответа ok:true)
     if (update.pre_checkout_query) {
       const pcq = update.pre_checkout_query
-      console.log(`[pre_checkout] id=${pcq.id} user=${pcq.from.id} amount=${pcq.total_amount} payload=${pcq.invoice_payload}`)
+      const payload = pcq.invoice_payload
+      console.log(`[pre_checkout] id=${pcq.id} user=${pcq.from.id} amount=${pcq.total_amount} payload=${payload}`)
 
-      // Отвечаем ok:true — подтверждаем платёж
-      let preCheckoutOk = false
+      // Отвечаем ok:true
       try {
-        const res = await altgram.answerPreCheckoutQuery({ pre_checkout_query_id: pcq.id, ok: true })
-        console.log(`[pre_checkout] answered:`, JSON.stringify(res).slice(0, 100))
-        if (res.ok) preCheckoutOk = true
+        await altgram.answerPreCheckoutQuery({ pre_checkout_query_id: pcq.id, ok: true })
       } catch (e) {
-        console.error('[pre_checkout] error:', e)
+        console.error('[pre_checkout] answer error:', e)
       }
 
-      // Доставляем NFT ТОЛЬКО если pre_checkout успешно ответил ok:true
-      // AltGram иногда возвращает QUERY_ID_INVALID (запрос уже истёк)
-      // Но даже если истёк — проверяем что платёж действительно был
-      const payload = pcq.invoice_payload
+      const userTgId = String(pcq.from.id)
+
+      // TOPUP — пополнение баланса (payload: topup:tgId:amount)
+      if (payload?.startsWith('topup:')) {
+        const parts = payload.split(':')
+        const amount = parseInt(parts[2] ?? '0')
+        if (amount <= 0) return
+
+        // Начисляем звёзды на баланс
+        const updated = await db.$transaction(async (tx) => {
+          const u = await tx.user.update({
+            where: { tgId: userTgId },
+            data: { balance: { increment: amount } },
+          })
+          await tx.transaction.create({
+            data: {
+              userId: userTgId,
+              type: 'deposit',
+              amount,
+              balanceAfter: u.balance,
+              note: `Пополнение баланса ${amount}⭐`,
+            },
+          })
+          return u
+        })
+
+        console.log(`[topup] +${amount}⭐ to ${userTgId}. Balance: ${updated.balance}`)
+        await send(Number(userTgId),
+          [
+            `✅ **Баланс пополнен!**`,
+            `💰 +${amount}⭐`,
+            `💼 Новый баланс: ${updated.balance}⭐`,
+            ``,
+            `Теперь можно купить NFT: /start`,
+          ].join('\n'))
+        return
+      }
+
+      // ORDER — покупка NFT (payload: order:orderId) — уже списали с баланса, доставляем
       if (payload?.startsWith('order:')) {
         const orderId = payload.slice(6)
         const order = await db.order.findUnique({ where: { id: orderId } })
         
         if (!order) {
           console.log(`[pre_checkout] order not found: ${orderId}`)
-          // Ошибка — заказ не найден, отменяем
-          try {
-            await altgram.answerPreCheckoutQuery({ pre_checkout_query_id: pcq.id, ok: false, error_message: 'Заказ не найден' })
-          } catch {}
           return
         }
-
         if (order.status === 'fulfilled' || order.status === 'partial') {
-          console.log(`[pre_checkout] order already delivered: ${orderId}`)
+          console.log(`[pre_checkout] already delivered: ${orderId}`)
           return
         }
-
-        // Проверяем сумму — должна совпадать с ценой заказа
         if (pcq.total_amount !== order.totalStars) {
-          console.log(`[pre_checkout] amount mismatch: ${pcq.total_amount} vs ${order.totalStars}`)
-          try {
-            await altgram.answerPreCheckoutQuery({ pre_checkout_query_id: pcq.id, ok: false, error_message: 'Неверная сумма' })
-          } catch {}
+          console.log(`[pre_checkout] amount mismatch`)
           return
         }
 
-        // Помечаем как оплаченный
-        await db.order.update({
-          where: { id: orderId },
-          data: { status: 'paid', paidAt: new Date() },
-        })
-        
-        console.log(`[pre_checkout] delivering order ${orderId}`)
-        await deliverOrder(orderId, String(pcq.from.id))
+        await db.order.update({ where: { id: orderId }, data: { status: 'paid', paidAt: new Date() } })
+        await deliverOrder(orderId, userTgId)
       }
       return
     }
@@ -181,6 +196,9 @@ async function handleText(msg: TgMessage) {
     case '/balance':
       await send(msg.chat.id, `💰 **Твой баланс: ${user.balance}⭐**`)
       break
+    case '/topup':
+      await handleTopup(msg, user, text.split(/\s+/)[1])
+      break
     case '/cart':
       await showCart(msg.chat.id, user)
       break
@@ -214,6 +232,50 @@ async function handleText(msg: TgMessage) {
       if (cmd.startsWith('/')) {
         await send(msg.chat.id, '🤔 Используй /start для каталога')
       }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Topup balance — пополнение через Telegram Stars                    */
+/* ------------------------------------------------------------------ */
+
+const TOPUP_AMOUNTS = [25, 50, 100, 250, 500, 1000]
+
+async function handleTopup(msg: TgMessage, user: { tgId: string; balance: number }, amountArg?: string) {
+  const amount = parseInt(amountArg ?? '0')
+
+  if (!amount || !TOPUP_AMOUNTS.includes(amount)) {
+    const kb: TgInlineKeyboardMarkup = {
+      inline_keyboard: [
+        TOPUP_AMOUNTS.slice(0, 3).map(a => ({ text: `+${a}⭐`, callback_data: `topup:${a}` })),
+        TOPUP_AMOUNTS.slice(3).map(a => ({ text: `+${a}⭐`, callback_data: `topup:${a}` })),
+      ],
+    }
+    await send(msg.chat.id,
+      [
+        `💳 **Пополнение баланса**`,
+        ``,
+        `💼 Текущий баланс: ${user.balance}⭐`,
+        ``,
+        `Выбери сумму:`,
+      ].join('\n'), kb)
+    return
+  }
+
+  // Создаём инвойс на пополнение
+  await send(msg.chat.id, `💳 Создаю счёт на ${amount}⭐...`)
+
+  const res = await altgram.sendInvoice({
+    chat_id: Number(user.tgId),
+    title: `Пополнение баланса +${amount}⭐`,
+    description: `Зачисление ${amount}⭐ на баланс NFT Shop`,
+    payload: `topup:${user.tgId}:${amount}`,
+    currency: 'XTR',
+    prices: [{ label: `${amount} Stars`, amount }],
+  })
+
+  if (!res.ok) {
+    await send(msg.chat.id, '❌ Не удалось создать счёт. Попробуй позже.')
   }
 }
 
@@ -309,7 +371,29 @@ async function buyNow(chatId: number, userId: string, slug: string, qty: number)
 
   const total = nft.priceStars * qty
 
-  // Создаём заказ
+  // 🔒 ПРОВЕРКА БАЛАНСА в БД
+  const user = await db.user.findUnique({ where: { tgId: userId } })
+  if (!user) {
+    await send(chatId, '❌ Профиль не найден. Нажми /start')
+    return
+  }
+
+  if (user.balance < total) {
+    const need = total - user.balance
+    await send(chatId,
+      [
+        `❌ **Недостаточно звёзд**`,
+        '',
+        `💰 Нужно: ${total}⭐`,
+        `💼 У вас: ${user.balance}⭐`,
+        `🚫 Не хватает: ${need}⭐`,
+        '',
+        `Пополнить: /topup ${need}`,
+      ].join('\n'))
+    return
+  }
+
+  // Создаём заказ — прогресс: pending → debiting → delivering → fulfilled
   const order = await db.order.create({
     data: {
       userId,
@@ -325,24 +409,53 @@ async function buyNow(chatId: number, userId: string, slug: string, qty: number)
       '',
       `${nft.emoji} ${nft.name} × ${qty}`,
       `💰 Итого: **${total}⭐**`,
+      `💼 Баланс: ${user.balance}⭐`,
       '',
-      'Нажми «⭐ Pay» ниже для оплаты:',
+      'Обрабатываю...',
     ].join('\n'))
 
-  // Создаём инвойс — БЕЗ reply_markup! AltGram сам добавит кнопку «⭐ Pay»
-  const res = await altgram.sendInvoice({
-    chat_id: Number(userId),
-    title: `${nft.emoji} ${nft.name} × ${qty}`,
-    description: `Покупка ${qty} × ${nft.name} (${nft.priceStars}⭐ каждый). Всего: ${total}⭐`,
-    payload: `order:${order.id}`,
-    currency: 'XTR',
-    prices: [{ label: `${nft.name} × ${qty}`, amount: total }],
-  })
+  // 🔒 ПРОГРЕСС: pending → debiting (списываем звёзды атомарно)
+  try {
+    const afterDebit = await db.$transaction(async (tx) => {
+      const fresh = await tx.user.findUnique({ where: { tgId: userId } })
+      if (!fresh) throw new Error('user_missing')
+      if (fresh.balance < total) throw new Error('insufficient_balance')
+      const u = await tx.user.update({
+        where: { tgId: userId },
+        data: { balance: { decrement: total } },
+      })
+      await tx.transaction.create({
+        data: {
+          userId,
+          type: 'purchase',
+          amount: -total,
+          balanceAfter: u.balance,
+          note: `Заказ #${order.id.slice(-8)}: ${nft.emoji} ${nft.name} ×${qty}`,
+        },
+      })
+      await tx.order.update({
+        where: { id: order.id },
+        data: { status: 'debiting' },
+      })
+      return u
+    })
 
-  if (res.ok && res.result) {
-    await db.order.update({ where: { id: order.id }, data: { invoiceMsgId: String(res.result.message_id) } })
-  } else {
-    await send(chatId, '❌ Не удалось создать инвойс. Попробуй позже.')
+    // 🔒 ПРОГРЕСС: debiting → delivering
+    await db.order.update({ where: { id: order.id }, data: { status: 'delivering', paidAt: new Date() } })
+    
+    await send(chatId, `✅ Списано ${total}⭐. Баланс: ${afterDebit.balance}⭐\n📦 Доставляю NFT...`)
+
+    // Доставляем gifts
+    await deliverOrder(order.id, userId)
+  } catch (e) {
+    const err = String(e)
+    if (err.includes('insufficient_balance')) {
+      await db.order.update({ where: { id: order.id }, data: { status: 'failed' } })
+      await send(chatId, '❌ Недостаточно звёзд. Пополните баланс: /topup')
+    } else {
+      await db.order.update({ where: { id: order.id }, data: { status: 'failed' } })
+      await send(chatId, `❌ Ошибка: ${err.slice(0, 200)}`)
+    }
   }
 }
 
@@ -632,6 +745,22 @@ async function handleCallback(cq: TgCallbackQuery) {
 
   if (act === 'catalog') {
     await sendCatalog(chatId)
+  } else if (act === 'topup') {
+    const amount = parseInt(arg1)
+    if (!isNaN(amount) && TOPUP_AMOUNTS.includes(amount)) {
+      try { await altgram.answerCallbackQuery({ callback_query_id: cq.id, text: `💳 ${amount}⭐` }) } catch {}
+      const res = await altgram.sendInvoice({
+        chat_id: Number(user.tgId),
+        title: `Пополнение баланса +${amount}⭐`,
+        description: `Зачисление ${amount}⭐ на баланс NFT Shop`,
+        payload: `topup:${user.tgId}:${amount}`,
+        currency: 'XTR',
+        prices: [{ label: `${amount} Stars`, amount }],
+      })
+      if (!res.ok) {
+        await send(chatId, '❌ Не удалось создать счёт.')
+      }
+    }
   } else if (act === 'cat') {
     await showCategory(chatId, arg1)
   } else if (act === 'nft') {
