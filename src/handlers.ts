@@ -26,27 +26,12 @@ interface NftItem {
 }
 
 const NFT_CATALOG: NftItem[] = [
-  // 15⭐ — обычные
-  { slug: 'bear-15', name: 'Мишка', emoji: '🧸', priceStars: 15, giftIds: ['9000000000000001'], category: 'basic' },
-  { slug: 'heart-15', name: 'Сердце', emoji: '❤️', priceStars: 15, giftIds: ['9000000000000006'], category: 'basic' },
-  // 25⭐ — Scared Cat (NFT!), Подарок, Роза
-  { slug: 'scared-cat', name: 'Scared Cat', emoji: '🐱', priceStars: 25, giftIds: ['9000000000000007'], category: 'nft' },
-  { slug: 'gift-25', name: 'Подарок', emoji: '🎁', priceStars: 25, giftIds: ['9000000000000028', '9000000000000030'], category: 'basic' },
-  { slug: 'rose-25', name: 'Роза', emoji: '🌹', priceStars: 25, giftIds: ['9000000000000030'], category: 'basic' },
-  // 50⭐ — Букет, Ракета, Бутылка, Торт
-  { slug: 'bouquet-50', name: 'Букет', emoji: '💐', priceStars: 50, giftIds: ['9000000000000005', '9000000000000008'], category: 'basic' },
-  { slug: 'rocket-50', name: 'Ракета', emoji: '🚀', priceStars: 50, giftIds: ['9000000000000009', '9000000000000013'], category: 'basic' },
-  { slug: 'bottle-50', name: 'Бутылка', emoji: '🍾', priceStars: 50, giftIds: ['9000000000000033'], category: 'basic' },
-  { slug: 'cake-50', name: 'Birthday Cake', emoji: '🎂', priceStars: 50, giftIds: ['9000000000000005', '9000000000000008'], category: 'basic' },
-  // 100⭐ — Кубок, Кольцо, Алмаз
-  { slug: 'cup-100', name: 'Кубок', emoji: '🏆', priceStars: 100, giftIds: ['9000000000000010', '9000000000000011'], category: 'basic' },
-  { slug: 'ring-100', name: 'Кольцо', emoji: '💍', priceStars: 100, giftIds: ['9000000000000012', '9000000000000036'], category: 'basic' },
-  { slug: 'diamond-100', name: 'Алмаз', emoji: '💎', priceStars: 100, giftIds: ['9000000000000039', '9000000000000047'], category: 'basic' },
+  // NFT
+  { slug: 'scared-cat', name: 'Scared Cat', emoji: '🐱', priceStars: 25, giftIds: ['9000000000000030'], category: 'nft' },
 ]
 
 const CATEGORIES = [
-  { id: 'basic', name: '🎁 Обычные', desc: 'Стандартные подарки 15-100⭐' },
-  { id: 'nft', name: '🖼️ NFT', desc: 'Scared Cat — 25⭐' },
+  { id: 'nft', name: '🖼️ NFT', desc: 'Уникальные NFT подарки' },
 ]
 
 function getNftBySlug(slug: string): NftItem | null {
@@ -212,7 +197,10 @@ async function sendCatalog(chatId: number) {
     [
       '🛍️ **NFT Shop**',
       '',
-      'Выбери категорию NFT:',
+      'Выбери категорию:',
+      '',
+      '✅ Текущие доступные NFT:',
+      ...NFT_CATALOG.map(n => `${n.emoji} ${n.name} — ${n.priceStars}⭐`),
     ].join('\n'), kb)
 }
 
@@ -226,7 +214,6 @@ async function showCategory(chatId: number, catId: string) {
     return
   }
 
-  const lines = nfts.map(n => `${n.emoji} **${n.name}** — ${n.priceStars}⭐`)
   const kb: TgInlineKeyboardMarkup = {
     inline_keyboard: [
       ...nfts.map(n => [{ text: `${n.emoji} ${n.name} — ${n.priceStars}⭐`, callback_data: `nft:${n.slug}` }]),
@@ -238,7 +225,8 @@ async function showCategory(chatId: number, catId: string) {
       `${cat.name}`,
       cat.desc,
       '',
-      ...lines,
+      '✅ Доступные NFT:',
+      ...nfts.map(n => `${n.emoji} ${n.name} — ${n.priceStars}⭐`),
     ].join('\n'), kb)
 }
 
