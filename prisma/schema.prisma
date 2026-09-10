@@ -1,0 +1,76 @@
+// Stars NFT Shop — Prisma schema (uses "nftshop" schema)
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = "postgresql://postgres.izxodeqeofxkyeluymvz:wp8dZOTICPfYBCBQ@aws-0-eu-central-1.pooler.supabase.com:5432/postgres"
+  schemas  = ["nftshop"]
+}
+
+model User {
+  id          String   @id @default(cuid())
+  tgId        String   @unique
+  username    String?
+  firstName   String?
+  isAdmin     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orders      Order[]
+  cartItems   CartItem[]
+
+  @@schema("nftshop")
+}
+
+model NftProduct {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  category    String   // "cats", "gifts", "premium", "legendary"
+  emoji       String
+  priceStars  Int      // цена в Stars
+  giftIds     String   // JSON array of gift_id strings
+  isActive    Boolean  @default(true)
+  soldCount   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([category])
+  @@index([isActive])
+  @@schema("nftshop")
+}
+
+model CartItem {
+  id          String   @id @default(cuid())
+  userId      String
+  productSlug String
+  quantity    Int      @default(1)
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [tgId], onDelete: Cascade)
+
+  @@unique([userId, productSlug])
+  @@schema("nftshop")
+}
+
+model Order {
+  id              String   @id @default(cuid())
+  userId          String
+  totalStars      Int
+  itemsJson       String   // JSON: [{slug, name, emoji, price, qty}]
+  status          String   @default("pending") // pending, paid, fulfilled, failed
+  paymentChargeId String?
+  invoiceMsgId   String?
+  createdAt       DateTime @default(now())
+  paidAt          DateTime?
+  fulfilledAt     DateTime?
+
+  user            User     @relation(fields: [userId], references: [tgId], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@schema("nftshop")
+}
