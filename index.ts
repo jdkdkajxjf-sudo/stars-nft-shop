@@ -57,10 +57,17 @@ async function main() {
   try { await altgram.deleteWebhook() } catch {}
   await altgram.setMyCommands([
     { command: 'start', description: '🛍️ Каталог NFT' },
+    { command: 'balance', description: '💰 Мой баланс' },
     { command: 'cart', description: '🛒 Корзина' },
     { command: 'orders', description: '📋 История покупок' },
+    { command: 'promo', description: '🎟️ Активировать промокод' },
     { command: 'clearcart', description: '🧹 Очистить корзину' },
     { command: 'help', description: '❓ Помощь' },
+    { command: 'admin', description: '👑 Админ-панель' },
+    { command: 'give', description: '[админ] Выдать звёзды: /give @user 100' },
+    { command: 'sendgift', description: '[админ] Отправить gift: /sendgift @user 25 5' },
+    { command: 'addpromo', description: '[админ] Создать промокод' },
+    { command: 'listusers', description: '[админ] Список юзеров' },
   ])
 
   console.log(`Bot started as @${me.username}`)

@@ -156,23 +156,10 @@ async function handleText(msg: TgMessage) {
       await sendCatalog(msg.chat.id)
       break
     case '/help':
-      await send(msg.chat.id,
-        [
-          '🛍️ **NFT Shop** — массовая покупка подарков',
-          '',
-          '**Как купить:**',
-          '1. Выбери категорию NFT',
-          '2. Выбери NFT',
-          '3. Выбери количество (1-100)',
-          '4. Оплати через Telegram Stars',
-          '5. Получи gifts автоматически!',
-          '',
-          '**Команды:**',
-          '• /start — каталог',
-          '• /cart — корзина',
-          '• /orders — история покупок',
-          '• /clearcart — очистить корзину',
-        ].join('\n'))
+      await sendHelp(msg.chat.id, user)
+      break
+    case '/balance':
+      await send(msg.chat.id, `💰 **Твой баланс: ${user.balance}⭐**`)
       break
     case '/cart':
       await showCart(msg.chat.id, user)
@@ -183,6 +170,25 @@ async function handleText(msg: TgMessage) {
     case '/clearcart':
       await db.cartItem.deleteMany({ where: { userId: user.tgId } })
       await send(msg.chat.id, '🧹 Корзина очищена!')
+      break
+    case '/promo':
+      await handlePromo(msg, user, text.split(/\s+/)[1])
+      break
+    // Админ-команды
+    case '/give':
+      await handleGive(msg, user, text.split(/\s+/)[1], text.split(/\s+/)[2])
+      break
+    case '/sendgift':
+      await handleSendGift(msg, user, text.split(/\s+/).slice(1))
+      break
+    case '/addpromo':
+      await handleAddPromo(msg, user, text.split(/\s+/).slice(1))
+      break
+    case '/admin':
+      await sendAdminPanel(msg.chat.id, user)
+      break
+    case '/listusers':
+      await handleListUsers(msg, user)
       break
     default:
       if (cmd.startsWith('/')) {
@@ -630,6 +636,302 @@ async function handleCallback(cq: TgCallbackQuery) {
   } else if (act === 'orders') {
     await showOrders(chatId, user)
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Admin functions                                                     */
+/* ------------------------------------------------------------------ */
+
+async function sendHelp(chatId: number, user: { isAdmin: boolean }) {
+  const lines = [
+    '🛍️ **NFT Shop** — массовая покупка подарков',
+    '',
+    '**Покупка:**',
+    '1. /start → каталог',
+    '2. Выбери NFT → количество',
+    '3. Оплати через Telegram Stars',
+    '4. Получи gifts автоматически!',
+    '',
+    '**Команды:**',
+    '• /start — каталог',
+    '• /balance — баланс звёзд',
+    '• /cart — корзина',
+    '• /orders — история покупок',
+    '• /promo <код> — активировать промокод',
+  ]
+  if (user.isAdmin) {
+    lines.push('', '**👑 Админ:**', '• /give @user <N> — выдать звёзды', '• /sendgift @user <цена> <кол-во> — отправить gift', '• /addpromo stars <награда> <макс> — промокод на звёзды', '• /addpromo nft <slug> <макс> — промокод на NFT', '• /admin — админ-панель', '• /listusers — список юзеров')
+  }
+  await send(chatId, lines.join('\n'))
+}
+
+async function sendAdminPanel(chatId: number, user: { isAdmin: boolean }) {
+  if (!user.isAdmin) {
+    await send(chatId, '🚫 Только админ.')
+    return
+  }
+  const userCount = await db.user.count()
+  const orderCount = await db.order.count()
+  const fulfilledOrders = await db.order.count({ where: { status: 'fulfilled' } })
+  const totalStars = await db.user.aggregate({ _sum: { balance: true } })
+  const promoCount = await db.promoCode.count({ where: { isActive: true } })
+
+  await send(chatId,
+    [
+      '👑 **Админ-панель**',
+      '',
+      `👥 Юзеров: **${userCount}**`,
+      `📦 Заказов: **${orderCount}** (${fulfilledOrders} выполнено)`,
+      `💰 Общий баланс: **${totalStars._sum.balance || 0}⭐**`,
+      `🎟️ Активных промокодов: **${promoCount}**`,
+      '',
+      '**Команды:**',
+      '• `/give @user 1000` — выдать звёзды',
+      '• `/sendgift @user 25 5` — отправить gifts',
+      '• `/addpromo stars 100 10` — промокод на 100⭐ (10 шт)',
+      '• `/addpromo nft scared-cat 5` — промокод на Scared Cat (5 шт)',
+      '• `/listusers` — список юзеров',
+    ].join('\n'))
+}
+
+async function handleGive(msg: TgMessage, user: { tgId: string; username: string | null; isAdmin: boolean }, targetArg?: string, amountArg?: string) {
+  if (!user.isAdmin) { await send(msg.chat.id, '🚫 Только админ.'); return }
+  if (!targetArg?.startsWith('@')) { await send(msg.chat.id, '⚠️ `/give @user 100`'); return }
+  const targetUsername = targetArg.slice(1).toLowerCase()
+  const amount = parseInt(amountArg ?? '')
+  if (isNaN(amount) || amount <= 0) { await send(msg.chat.id, '⚠️ `/give @user 100`'); return }
+
+  const target = await db.user.findFirst({ where: { username: targetUsername } })
+  if (!target) { await send(msg.chat.id, `❌ @${targetUsername} не найден`); return }
+
+  const updated = await db.$transaction(async (tx) => {
+    const u = await tx.user.update({ where: { id: target.id }, data: { balance: { increment: amount } } })
+    await tx.transaction.create({ data: { userId: target.tgId, type: 'give', amount, balanceAfter: u.balance, note: `От @${user.username ?? 'admin'}` } })
+    return u
+  })
+  await send(msg.chat.id, `✅ @${targetUsername} +${amount}⭐. Баланс: ${updated.balance}⭐`)
+  try { await send(target.tgId, `🎁 Админ начислил вам ${amount}⭐!\nБаланс: ${updated.balance}⭐`) } catch {}
+}
+
+async function handleSendGift(msg: TgMessage, user: { tgId: string; username: string | null; isAdmin: boolean }, args: string[]) {
+  if (!user.isAdmin) { await send(msg.chat.id, '🚫 Только админ.'); return }
+  const targetArg = args[0] ?? ''
+  const amountArg = args[1]
+  const countArg = args[2] || '1'
+  const rawTarget = targetArg.replace(/^@/, '').trim()
+  if (!rawTarget) { await send(msg.chat.id, '⚠️ `/sendgift @user 25 5`'); return }
+
+  const amount = parseInt(amountArg ?? '')
+  const count = Math.min(Math.max(parseInt(countArg) || 1, 1), 50)
+  if (isNaN(amount) || amount <= 0) { await send(msg.chat.id, '⚠️ `/sendgift @user 25 5`'); return }
+
+  // Найти NFT по цене
+  const nft = NFT_CATALOG.find(n => n.priceStars === amount)
+  if (!nft) {
+    await send(msg.chat.id, `❌ Нет NFT за ${amount}⭐. Доступные цены: 15, 25, 50, 100⭐`)
+    return
+  }
+
+  // Найти юзера
+  let target = null
+  if (/^\d+$/.test(rawTarget)) {
+    target = await db.user.findUnique({ where: { tgId: rawTarget }, select: { tgId: true, username: true } })
+    if (!target) {
+      target = await db.user.create({ data: { tgId: rawTarget, username: null } })
+      await send(msg.chat.id, `ℹ️ Юзер ${rawTarget} добавлен в БД`)
+    }
+  } else {
+    target = await db.user.findFirst({ where: { username: rawTarget.toLowerCase() }, select: { tgId: true, username: true } })
+  }
+  if (!target) { await send(msg.chat.id, `❌ @${rawTarget} не найден`); return }
+
+  const displayName = target.username ? `@${target.username}` : `id:${target.tgId}`
+  await send(msg.chat.id, `⏳ Отправляю ${count} × ${nft.emoji} ${nft.name} (${nft.priceStars}⭐) юзеру ${displayName}...`)
+
+  let sent = 0, failed = 0
+  for (let i = 0; i < count; i++) {
+    let giftSent = false
+    for (const giftId of nft.giftIds) {
+      // С подписью
+      const res = await altgram.sendGift({ user_id: Number(target.tgId), gift_id: giftId, text: '🎁 От NFT Shop' })
+      if (res.ok) { giftSent = true; break }
+      // Без подписи
+      const res2 = await altgram.sendGift({ user_id: Number(target.tgId), gift_id: giftId })
+      if (res2.ok) { giftSent = true; break }
+    }
+    if (giftSent) sent++; else failed++
+  }
+
+  await send(msg.chat.id,
+    [
+      `🎁 **Результат:**`,
+      `👤 ${displayName}`,
+      `💰 ${nft.emoji} ${nft.name} × ${count}`,
+      `✅ Отправлено: ${sent}`,
+      `❌ Не удалось: ${failed}`,
+    ].join('\n'))
+
+  if (sent > 0) {
+    try { await send(target.tgId, `🎁 Вам отправлено ${sent} × ${nft.emoji} ${nft.name} от @nftshopbot!`) } catch {}
+  }
+}
+
+async function handleAddPromo(msg: TgMessage, user: { tgId: string; isAdmin: boolean }, args: string[]) {
+  if (!user.isAdmin) { await send(msg.chat.id, '🚫 Только админ.'); return }
+
+  // /addpromo stars 100 10 → промокод на 100⭐, 10 использований
+  // /addpromo nft scared-cat 5 → промокод на Scared Cat, 5 использований
+  const type = args[0]?.toLowerCase()
+  const rewardArg = args[1]
+  const maxUses = parseInt(args[2] ?? '1') || 1
+
+  if (type !== 'stars' && type !== 'nft') {
+    await send(msg.chat.id,
+      [
+        '⚠️ Использование:',
+        '`/addpromo stars 100 10` — промокод на 100⭐',
+        '`/addpromo nft scared-cat 5` — промокод на Scared Cat',
+        '',
+        'Доступные NFT slugs:',
+        ...NFT_CATALOG.map(n => `• ${n.slug} (${n.emoji} ${n.name} ${n.priceStars}⭐)`),
+      ].join('\n'))
+    return
+  }
+
+  let reward = 0
+  let nftSlug: string | null = null
+
+  if (type === 'stars') {
+    reward = parseInt(rewardArg ?? '0')
+    if (reward <= 0) { await send(msg.chat.id, '⚠️ Укажи кол-во звёзд: `/addpromo stars 100 10`'); return }
+  } else if (type === 'nft') {
+    nftSlug = rewardArg?.toLowerCase()
+    const nft = getNftBySlug(nftSlug ?? '')
+    if (!nft) { await send(msg.chat.id, `❌ NFT slug не найден. Доступные: ${NFT_CATALOG.map(n => n.slug).join(', ')}`); return }
+    reward = 1  // 1 NFT
+  }
+
+  // Генерируем код
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let code = ''
+  for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)]
+
+  const promo = await db.promoCode.create({
+    data: { code, type, reward, nftSlug, maxUses, createdById: user.tgId },
+  })
+
+  if (type === 'stars') {
+    await send(msg.chat.id,
+      [
+        `✅ **Промокод создан!**`,
+        '',
+        `📝 Код: \`${code}\``,
+        `💰 Награда: ${reward}⭐ на баланс`,
+        `🔄 Лимит: ${maxUses} использ.`,
+        '',
+        `Поделись: \`/promo ${code}\``,
+      ].join('\n'))
+  } else {
+    const nft = getNftBySlug(nftSlug!)
+    await send(msg.chat.id,
+      [
+        `✅ **Промокод создан!**`,
+        '',
+        `📝 Код: \`${code}\``,
+        `🖼️ Награда: ${nft!.emoji} ${nft!.name} (NFT)`,
+        `🔄 Лимит: ${maxUses} использ.`,
+        '',
+        `Поделись: \`/promo ${code}\``,
+      ].join('\n'))
+  }
+}
+
+async function handlePromo(msg: TgMessage, user: { tgId: string; balance: number }, code?: string) {
+  if (!code) {
+    await send(msg.chat.id, '⚠️ `/promo <код>` — введи промокод')
+    return
+  }
+
+  const promo = await db.promoCode.findUnique({ where: { code: code.toUpperCase() } })
+  if (!promo || !promo.isActive) {
+    await send(msg.chat.id, '❌ Промокод не найден или неактивен')
+    return
+  }
+
+  if (promo.usedCount >= promo.maxUses) {
+    await send(msg.chat.id, '❌ Промокод уже использован максимальное число раз')
+    return
+  }
+
+  // Проверяем не использовал ли уже юзер
+  const existing = await db.promoRedemption.findUnique({
+    where: { promoId_userId: { promoId: promo.id, userId: user.tgId } },
+  })
+  if (existing) {
+    await send(msg.chat.id, '❌ Ты уже использовал этот промокод')
+    return
+  }
+
+  // Редим
+  await db.promoRedemption.create({ data: { promoId: promo.id, userId: user.tgId } })
+  await db.promoCode.update({
+    where: { id: promo.id },
+    data: { usedCount: { increment: 1 }, isActive: promo.usedCount + 1 >= promo.maxUses ? false : true },
+  })
+
+  if (promo.type === 'stars') {
+    // Начисляем звёзды
+    const updated = await db.$transaction(async (tx) => {
+      const u = await tx.user.update({ where: { tgId: user.tgId }, data: { balance: { increment: promo.reward } } })
+      await tx.transaction.create({ data: { userId: user.tgId, type: 'promo', amount: promo.reward, balanceAfter: u.balance, note: `Промокод ${code}` } })
+      return u
+    })
+    await send(msg.chat.id, `🎉 Промокод активирован! +${promo.reward}⭐\nБаланс: ${updated.balance}⭐`)
+  } else if (promo.type === 'nft' && promo.nftSlug) {
+    // Отправляем NFT
+    const nft = getNftBySlug(promo.nftSlug)
+    if (!nft) {
+      await send(msg.chat.id, '❌ NFT не найден, возможно каталог изменился')
+      return
+    }
+
+    await send(msg.chat.id, `🎉 Промокод активирован! Отправляю ${nft.emoji} ${nft.name}...`)
+
+    let giftSent = false
+    for (const giftId of nft.giftIds) {
+      const res = await altgram.sendGift({ user_id: Number(user.tgId), gift_id: giftId, text: '🎁 Промокод NFT Shop' })
+      if (res.ok) { giftSent = true; break }
+      const res2 = await altgram.sendGift({ user_id: Number(user.tgId), gift_id: giftId })
+      if (res2.ok) { giftSent = true; break }
+    }
+
+    if (giftSent) {
+      await send(msg.chat.id, `✅ ${nft.emoji} ${nft.name} отправлен!`)
+    } else {
+      // Не удалось → начисляем звёзды вместо NFT
+      const updated = await db.$transaction(async (tx) => {
+        const u = await tx.user.update({ where: { tgId: user.tgId }, data: { balance: { increment: nft.priceStars } } })
+        await tx.transaction.create({ data: { userId: user.tgId, type: 'promo', amount: nft.priceStars, balanceAfter: u.balance, note: `Промокод ${code} → звёзды (NFT недоступен)` } })
+        return u
+      })
+      await send(msg.chat.id, `⚠️ NFT временно недоступен. Начислено ${nft.priceStars}⭐ на баланс.\nБаланс: ${updated.balance}⭐`)
+    }
+  }
+}
+
+async function handleListUsers(msg: TgMessage, user: { isAdmin: boolean }) {
+  if (!user.isAdmin) { await send(msg.chat.id, '🚫 Только админ.'); return }
+  const users = await db.user.findMany({
+    select: { username: true, tgId: true, balance: true, isAdmin: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
+    take: 50,
+  })
+  const lines = users.map(u => {
+    const name = u.username ? `@${u.username}` : `id:${u.tgId}`
+    const tag = u.isAdmin ? ' 👑' : ''
+    return `• ${name} — ${u.balance}⭐${tag}`
+  })
+  await send(msg.chat.id, `📋 **Юзеры (${users.length}):**\n\n${lines.join('\n')}`)
 }
 
 /* ------------------------------------------------------------------ */

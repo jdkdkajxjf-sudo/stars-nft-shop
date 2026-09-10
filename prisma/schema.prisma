@@ -17,12 +17,58 @@ model User {
   username    String?
   firstName   String?
   isAdmin     Boolean  @default(false)
+  balance     Int      @default(0)  // звёзды на балансе
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   orders      Order[]
   cartItems   CartItem[]
+  transactions Transaction[]
 
+  @@schema("nftshop")
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String   // "give", "promo", "purchase", "refund"
+  amount      Int      // может быть отрицательным
+  balanceAfter Int
+  note        String?
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [tgId], onDelete: Cascade)
+
+  @@index([userId])
+  @@schema("nftshop")
+}
+
+model PromoCode {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  type        String   // "stars" или "nft"
+  reward      Int      // stars: кол-во звёзд, nft: кол-во NFT
+  nftSlug     String?  // для type=nft: slug NFT
+  maxUses     Int      @default(1)
+  usedCount   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  redemptions PromoRedemption[]
+
+  @@schema("nftshop")
+}
+
+model PromoRedemption {
+  id          String   @id @default(cuid())
+  promoId     String
+  userId      String
+  createdAt   DateTime @default(now())
+
+  promo       PromoCode @relation(fields: [promoId], references: [id], onDelete: Cascade)
+
+  @@unique([promoId, userId])
   @@schema("nftshop")
 }
 
