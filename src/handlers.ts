@@ -28,16 +28,16 @@ interface NftItem {
 const NFT_CATALOG: NftItem[] = [
   // Обычные
   { slug: 'tg-gift-15', name: 'Подарок 15⭐', emoji: '🎁', priceStars: 15, giftIds: ['9000000000000001', '9000000000000006'], category: 'basic' },
+  { slug: 'cake-50', name: 'Birthday Cake', emoji: '🎂', priceStars: 50, giftIds: ['9000000000000005', '9000000000000008', '9000000000000009', '9000000000000013', '9000000000000033'], category: 'basic' },
   { slug: 'gift-75', name: 'Подарок 75⭐', emoji: '🎁', priceStars: 75, giftIds: ['9000000000000031', '9000000000000043'], category: 'basic' },
   { slug: 'tg-gift-100', name: 'Подарок 100⭐', emoji: '🎁', priceStars: 100, giftIds: ['9000000000000010', '9000000000000011', '9000000000000012', '9000000000000036', '9000000000000039', '9000000000000047'], category: 'basic' },
   // NFT
   { slug: 'scared-cat', name: 'Scared Cat', emoji: '🐱', priceStars: 25, giftIds: ['9000000000000007', '9000000000000028', '9000000000000030'], category: 'nft' },
-  { slug: 'cake-50', name: 'Birthday Cake', emoji: '🎂', priceStars: 50, giftIds: ['9000000000000005', '9000000000000008', '9000000000000009', '9000000000000013', '9000000000000033'], category: 'nft' },
 ]
 
 const CATEGORIES = [
   { id: 'basic', name: '🎁 Обычные', desc: 'Обычные TG подарки 15-100⭐' },
-  { id: 'nft', name: '🖼️ NFT', desc: 'Уникальные NFT — коты, торты' },
+  { id: 'nft', name: '🖼️ NFT', desc: 'Scared Cat — 25⭐' },
 ]
 
 function getNftBySlug(slug: string): NftItem | null {
