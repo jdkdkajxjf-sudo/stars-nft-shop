@@ -268,14 +268,10 @@ async function buyNow(chatId: number, userId: string, slug: string, qty: number)
       `${nft.emoji} ${nft.name} × ${qty}`,
       `💰 Итого: **${total}⭐**`,
       '',
-      'Нажми «Оплатить» для оплаты через Telegram Stars:',
+      'Нажми «⭐ Pay» ниже для оплаты:',
     ].join('\n'))
 
-  // Создаём инвойс
-  const kb: TgInlineKeyboardMarkup = {
-    inline_keyboard: [[{ text: `💳 Оплатить ${total}⭐`, pay: true, callback_data: `pay:${order.id}` }]],
-  }
-
+  // Создаём инвойс — БЕЗ reply_markup! AltGram сам добавит кнопку «⭐ Pay»
   const res = await altgram.sendInvoice({
     chat_id: Number(userId),
     title: `${nft.emoji} ${nft.name} × ${qty}`,
@@ -283,7 +279,6 @@ async function buyNow(chatId: number, userId: string, slug: string, qty: number)
     payload: `order:${order.id}`,
     currency: 'XTR',
     prices: [{ label: `${nft.name} × ${qty}`, amount: total }],
-    reply_markup: kb,
   })
 
   if (res.ok && res.result) {
@@ -486,10 +481,7 @@ async function checkout(chatId: number, userId: string) {
   const itemCount = itemsJson.reduce((s, i) => s + i.qty, 0)
   const summary = itemsJson.map(i => `${i.emoji} ${i.name} ×${i.qty}`).join(', ')
 
-  const kb: TgInlineKeyboardMarkup = {
-    inline_keyboard: [[{ text: `💳 Оплатить ${total}⭐`, pay: true, callback_data: `pay:${order.id}` }]],
-  }
-
+  // Создаём инвойс — БЕЗ reply_markup! AltGram сам добавит кнопку «⭐ Pay»
   await altgram.sendInvoice({
     chat_id: Number(userId),
     title: `🛍️ Заказ NFT (${itemCount} шт)`,
@@ -497,7 +489,6 @@ async function checkout(chatId: number, userId: string) {
     payload: `order:${order.id}`,
     currency: 'XTR',
     prices: [{ label: `NFT × ${itemCount}`, amount: total }],
-    reply_markup: kb,
   })
 }
 
