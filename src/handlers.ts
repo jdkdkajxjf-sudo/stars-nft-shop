@@ -79,17 +79,51 @@ export async function handleUpdate(update: TgUpdate): Promise<void> {
       console.log(`[pre_checkout] id=${pcq.id} user=${pcq.from.id} amount=${pcq.total_amount} payload=${pcq.invoice_payload}`)
 
       // Отвечаем ok:true — подтверждаем платёж
+      let preCheckoutOk = false
       try {
         const res = await altgram.answerPreCheckoutQuery({ pre_checkout_query_id: pcq.id, ok: true })
         console.log(`[pre_checkout] answered:`, JSON.stringify(res).slice(0, 100))
+        if (res.ok) preCheckoutOk = true
       } catch (e) {
         console.error('[pre_checkout] error:', e)
       }
 
-      // Доставляем NFT сразу (AltGram не пришлёт successful_payment)
+      // Доставляем NFT ТОЛЬКО если pre_checkout успешно ответил ok:true
+      // AltGram иногда возвращает QUERY_ID_INVALID (запрос уже истёк)
+      // Но даже если истёк — проверяем что платёж действительно был
       const payload = pcq.invoice_payload
       if (payload?.startsWith('order:')) {
         const orderId = payload.slice(6)
+        const order = await db.order.findUnique({ where: { id: orderId } })
+        
+        if (!order) {
+          console.log(`[pre_checkout] order not found: ${orderId}`)
+          // Ошибка — заказ не найден, отменяем
+          try {
+            await altgram.answerPreCheckoutQuery({ pre_checkout_query_id: pcq.id, ok: false, error_message: 'Заказ не найден' })
+          } catch {}
+          return
+        }
+
+        if (order.status === 'fulfilled' || order.status === 'partial') {
+          console.log(`[pre_checkout] order already delivered: ${orderId}`)
+          return
+        }
+
+        // Проверяем сумму — должна совпадать с ценой заказа
+        if (pcq.total_amount !== order.totalStars) {
+          console.log(`[pre_checkout] amount mismatch: ${pcq.total_amount} vs ${order.totalStars}`)
+          try {
+            await altgram.answerPreCheckoutQuery({ pre_checkout_query_id: pcq.id, ok: false, error_message: 'Неверная сумма' })
+          } catch {}
+          return
+        }
+
+        // Помечаем как оплаченный и доставляем
+        await db.order.update({
+          where: { id: orderId },
+          data: { status: 'paid', paidAt: new Date() },
+        })
         console.log(`[pre_checkout] delivering order ${orderId}`)
         await deliverOrder(orderId, String(pcq.from.id))
       }
@@ -324,17 +358,13 @@ async function deliverOrder(orderId: string, userTgId: string) {
     return
   }
 
-  if (order.status === 'fulfilled') {
-    console.log('[deliver] already fulfilled:', orderId)
+  // Проверяем что заказ оплачен (status=paid) или ещё pending
+  if (order.status === 'fulfilled' || order.status === 'partial') {
+    console.log('[deliver] already delivered:', orderId)
     return
   }
 
-  // Обновляем статус
-  await db.order.update({
-    where: { id: order.id },
-    data: { status: 'paid', paidAt: new Date() },
-  })
-
+  // НЕ меняем статус здесь — он уже 'paid' после pre_checkout
   await send(Number(userTgId), `✅ Оплата получена! Доставляю NFT...`)
 
   // Доставляем gifts
