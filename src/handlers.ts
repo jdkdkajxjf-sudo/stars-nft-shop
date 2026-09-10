@@ -119,11 +119,23 @@ export async function handleUpdate(update: TgUpdate): Promise<void> {
           return
         }
 
-        // Помечаем как оплаченный и доставляем
+        // Помечаем как оплаченный
         await db.order.update({
           where: { id: orderId },
           data: { status: 'paid', paidAt: new Date() },
         })
+        
+        // Ждём 3 секунды — даём AltGram время списать звёзды
+        console.log(`[pre_checkout] waiting 3s for AltGram to process payment...`)
+        await sleep(3000)
+        
+        // Проверяем — не был ли заказ уже доставлен параллельным запросом
+        const recheck = await db.order.findUnique({ where: { id: orderId }, select: { status: true } })
+        if (recheck && (recheck.status === 'fulfilled' || recheck.status === 'partial')) {
+          console.log(`[pre_checkout] order already delivered by parallel request: ${orderId}`)
+          return
+        }
+        
         console.log(`[pre_checkout] delivering order ${orderId}`)
         await deliverOrder(orderId, String(pcq.from.id))
       }
