@@ -77,19 +77,40 @@ async function upsertUser(from: TgUser) {
 
 export async function handleUpdate(update: TgUpdate): Promise<void> {
   try {
-    // Pre-checkout
+    // Pre-checkout — AltGram присылает ПЕРЕД оплатой
+    // ВАЖНО: AltGram НЕ присылает successful_payment после оплаты!
+    // Поэтому доставляем NFT СРАЗУ при pre_checkout (после ответа ok:true)
     if (update.pre_checkout_query) {
       const pcq = update.pre_checkout_query
-      console.log(`[pre_checkout] id=${pcq.id} user=${pcq.from.id}`)
+      console.log(`[pre_checkout] id=${pcq.id} user=${pcq.from.id} amount=${pcq.total_amount} payload=${pcq.invoice_payload}`)
+
+      // Отвечаем ok:true — подтверждаем платёж
       try {
-        await altgram.answerPreCheckoutQuery({ pre_checkout_query_id: pcq.id, ok: true })
+        const res = await altgram.answerPreCheckoutQuery({ pre_checkout_query_id: pcq.id, ok: true })
+        console.log(`[pre_checkout] answered:`, JSON.stringify(res).slice(0, 100))
       } catch (e) {
         console.error('[pre_checkout] error:', e)
+      }
+
+      // Доставляем NFT сразу (AltGram не пришлёт successful_payment)
+      const payload = pcq.invoice_payload
+      if (payload?.startsWith('order:')) {
+        const orderId = payload.slice(6)
+        console.log(`[pre_checkout] delivering order ${orderId}`)
+        await deliverOrder(orderId, String(pcq.from.id))
       }
       return
     }
 
     if (update.callback_query) {
+      const cqData = update.callback_query.data ?? ''
+      // AltGram присылает __invoice_pay:... когда юзер нажал ⭐ Pay
+      // Это НЕ обычный callback — игнорируем его (AltGram сам обработает оплату)
+      if (cqData.startsWith('__invoice_pay')) {
+        console.log(`[invoice_pay] user=${update.callback_query.from.id} — AltGram обрабатывает`)
+        try { await altgram.answerCallbackQuery({ callback_query_id: update.callback_query.id, text: '' }) } catch {}
+        return
+      }
       await handleCallback(update.callback_query)
       return
     }
@@ -292,36 +313,26 @@ async function buyNow(chatId: number, userId: string, slug: string, qty: number)
 /* Payment handler                                                     */
 /* ------------------------------------------------------------------ */
 
-async function handlePayment(msg: TgMessage) {
-  const sp = msg.successful_payment
-  if (!sp) return
-
-  const payload = sp.invoice_payload
-  if (!payload || !payload.startsWith('order:')) return
-
-  const orderId = payload.slice(6)
+// Доставка заказа (вызывается при pre_checkout_query — AltGram не присылает successful_payment)
+async function deliverOrder(orderId: string, userTgId: string) {
   const order = await db.order.findUnique({ where: { id: orderId } })
   if (!order) {
-    console.error('[payment] order not found:', orderId)
+    console.error('[deliver] order not found:', orderId)
     return
   }
 
   if (order.status === 'fulfilled') {
-    await send(msg.chat.id, '✅ Этот заказ уже выполнен!')
+    console.log('[deliver] already fulfilled:', orderId)
     return
   }
 
   // Обновляем статус
   await db.order.update({
     where: { id: order.id },
-    data: {
-      status: 'paid',
-      paymentChargeId: sp.telegram_payment_charge_id ?? null,
-      paidAt: new Date(),
-    },
+    data: { status: 'paid', paidAt: new Date() },
   })
 
-  await send(msg.chat.id, `✅ Оплата получена! Доставляю NFT...`)
+  await send(Number(userTgId), `✅ Оплата получена! Доставляю NFT...`)
 
   // Доставляем gifts
   const items = JSON.parse(order.itemsJson) as Array<{ slug: string; name: string; emoji: string; price: number; qty: number }>
@@ -371,7 +382,7 @@ async function handlePayment(msg: TgMessage) {
     },
   })
 
-  await send(msg.chat.id,
+  await send(Number(userTgId),
     [
       `📦 **Заказ #${order.id.slice(-8)} выполнен!**`,
       '',
@@ -382,6 +393,26 @@ async function handlePayment(msg: TgMessage) {
       '',
       'Спасибо за покупку! 🎉',
     ].filter(Boolean).join('\n'))
+}
+
+async function handlePayment(msg: TgMessage) {
+  const sp = msg.successful_payment
+  if (!sp) return
+
+  const payload = sp.invoice_payload
+  if (!payload || !payload.startsWith('order:')) return
+
+  const orderId = payload.slice(6)
+  // Если уже доставили через pre_checkout — игнорируем
+  const order = await db.order.findUnique({ where: { id: orderId } })
+  if (!order) return
+  if (order.status === 'fulfilled' || order.status === 'partial') {
+    console.log('[payment] already delivered via pre_checkout:', orderId)
+    return
+  }
+
+  // Если successful_payment всё-таки пришёл — доставляем
+  await deliverOrder(orderId, String(msg.from?.id ?? ''))
 }
 
 /* ------------------------------------------------------------------ */
